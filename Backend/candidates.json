@@ -5,6 +5,7 @@
       "name": "Aarav Sharma",
       "role": "Full-stack Engineer",
       "experience": 2,
+      "education": "B.S. Computer Science",
       "metrics": {
         "technical_score": 78,
         "communication_score": 88,
@@ -12,14 +13,97 @@
         "project_completion": 85,
         "assessment_status": "in_progress"
       },
-      "skills": ["Python", "FastAPI", "JavaScript", "APIs"],
-      "growth_areas": ["system design", "testing"]
+      "skills": ["Python", "FastAPI", "JavaScript", "APIs", "REST"],
+      "growth_areas": ["system design", "testing", "database optimization"],
+      "missions": [
+        {
+          "title": "Environment & Tooling Basics",
+          "day": 1,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "Python Fundamentals - Part 1",
+          "day": 2,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "Python Fundamentals - Part 2",
+          "day": 3,
+          "passed": true,
+          "skipped": false,
+          "attempts": 2,
+          "commit_days": 2
+        },
+        {
+          "title": "Data Structures & Algorithms",
+          "day": 4,
+          "passed": false,
+          "skipped": false,
+          "attempts": 3,
+          "commit_days": 2
+        },
+        {
+          "title": "Database Design Basics",
+          "day": 5,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "REST API Design",
+          "day": 6,
+          "passed": true,
+          "skipped": false,
+          "attempts": 2,
+          "commit_days": 2
+        },
+        {
+          "title": "FastAPI Deep Dive",
+          "day": 7,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "Embeddings Introduction",
+          "day": 8,
+          "passed": false,
+          "skipped": false,
+          "attempts": 2,
+          "commit_days": 1
+        },
+        {
+          "title": "Vector Databases",
+          "day": 9,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "LLM Fundamentals",
+          "day": 10,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        }
+      ]
     },
     {
       "id": "candidate-002",
       "name": "Mia Johnson",
       "role": "Data Engineer",
       "experience": 3,
+      "education": "M.S. Data Science",
       "metrics": {
         "technical_score": 88,
         "communication_score": 80,
@@ -27,8 +111,204 @@
         "project_completion": 73,
         "assessment_status": "ready"
       },
-      "skills": ["SQL", "Python", "ETL", "Analytics"],
-      "growth_areas": ["data modeling"]
+      "skills": ["SQL", "Python", "ETL", "Analytics", "Pandas", "PySpark"],
+      "growth_areas": ["data modeling", "system design", "API design"],
+      "missions": [
+        {
+          "title": "Environment & Tooling Basics",
+          "day": 1,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "Python Fundamentals - Part 1",
+          "day": 2,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "Python Fundamentals - Part 2",
+          "day": 3,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "Data Structures & Algorithms",
+          "day": 4,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "Database Design Basics",
+          "day": 5,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "REST API Design",
+          "day": 6,
+          "passed": false,
+          "skipped": false,
+          "attempts": 2,
+          "commit_days": 1
+        },
+        {
+          "title": "FastAPI Deep Dive",
+          "day": 7,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "Embeddings Introduction",
+          "day": 8,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "Vector Databases",
+          "day": 9,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "LLM Fundamentals",
+          "day": 10,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        }
+      ]
+    },
+    {
+      "id": "candidate-003",
+      "name": "James Chen",
+      "role": "Backend Engineer",
+      "experience": 5,
+      "education": "B.S. Computer Engineering",
+      "metrics": {
+        "technical_score": 92,
+        "communication_score": 75,
+        "problem_solving_score": 88,
+        "project_completion": 95,
+        "assessment_status": "ready"
+      },
+      "skills": ["Python", "Go", "Kubernetes", "microservices", "gRPC", "Protobuf"],
+      "growth_areas": ["prompt engineering", "ML operations"],
+      "missions": [
+        {
+          "title": "Environment & Tooling Basics",
+          "day": 1,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "Python Fundamentals - Part 1",
+          "day": 2,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "Python Fundamentals - Part 2",
+          "day": 3,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "Data Structures & Algorithms",
+          "day": 4,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "Database Design Basics",
+          "day": 5,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "REST API Design",
+          "day": 6,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "FastAPI Deep Dive",
+          "day": 7,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "Embeddings Introduction",
+          "day": 8,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "Vector Databases",
+          "day": 9,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "LLM Fundamentals",
+          "day": 10,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "Prompt Engineering Basics",
+          "day": 11,
+          "passed": true,
+          "skipped": false,
+          "attempts": 1,
+          "commit_days": 1
+        },
+        {
+          "title": "Fine-tuning Strategies",
+          "day": 12,
+          "passed": true,
+          "skipped": false,
+          "attempts": 2,
+          "commit_days": 2
+        }
+      ]
     }
   ]
 }
