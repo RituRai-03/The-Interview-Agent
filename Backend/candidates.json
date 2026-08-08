@@ -1,0 +1,34 @@
+{
+  "candidates": [
+    {
+      "id": "candidate-001",
+      "name": "Aarav Sharma",
+      "role": "Full-stack Engineer",
+      "experience": 2,
+      "metrics": {
+        "technical_score": 78,
+        "communication_score": 88,
+        "problem_solving_score": 70,
+        "project_completion": 85,
+        "assessment_status": "in_progress"
+      },
+      "skills": ["Python", "FastAPI", "JavaScript", "APIs"],
+      "growth_areas": ["system design", "testing"]
+    },
+    {
+      "id": "candidate-002",
+      "name": "Mia Johnson",
+      "role": "Data Engineer",
+      "experience": 3,
+      "metrics": {
+        "technical_score": 88,
+        "communication_score": 80,
+        "problem_solving_score": 91,
+        "project_completion": 73,
+        "assessment_status": "ready"
+      },
+      "skills": ["SQL", "Python", "ETL", "Analytics"],
+      "growth_areas": ["data modeling"]
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "curriculum": {
+    "title": "31-Day Technical Bootcamp",
+    "iterations": 31,
+    "focus_areas": [
+      "Python fundamentals",
+      "REST API design",
+      "Database basics",
+      "System design",
+      "Interview readiness"
+    ],
+    "requirements": {
+      "minimum_progress": 75,
+      "required_modules": [
+        "Python fundamentals",
+        "REST API design",
+        "Database basics"
+      ],
+      "suggested_next_topic": "System design"
+    }
+  }
+}
