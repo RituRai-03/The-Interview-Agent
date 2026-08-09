@@ -57,7 +57,7 @@ def create_session(session_id: str, candidate_id: str, interview_type: str, payl
     with get_connection() as connection:
         connection.execute(
             """
-            INSERT INTO sessions (session_id, candidate_id, interview_type, payload, created_at)
+            INSERT OR REPLACE INTO sessions (session_id, candidate_id, interview_type, payload, created_at)
             VALUES (?, ?, ?, ?, ?)
             """,
             [session_id, candidate_id, interview_type, json.dumps(payload), created_at],
@@ -94,7 +94,7 @@ def insert_report(session_id: str, report: dict[str, Any], created_at: str) -> N
     with get_connection() as connection:
         connection.execute(
             """
-            INSERT INTO interview_reports (session_id, report, created_at)
+            INSERT OR REPLACE INTO interview_reports (session_id, report, created_at)
             VALUES (?, ?, ?)
             """,
             [session_id, json.dumps(report), created_at],
