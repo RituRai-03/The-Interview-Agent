@@ -7,3 +7,4 @@ __pycache__/
 sessions.json
 coverage/
 .pytest_cache/
+.vercel
