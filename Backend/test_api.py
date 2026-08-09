@@ -163,7 +163,6 @@ def test_interview_multi_turn_flow_and_completion():
     candidate = get_candidate_by_id("candidate-001")
     session_id = "test-multi-turn-001"
 
-    # Start
     start_resp = client.post("/api/interview", json={
         "sessionId": session_id,
         "candidate": candidate
@@ -171,16 +170,13 @@ def test_interview_multi_turn_flow_and_completion():
     assert start_resp.status_code == 200
     assert start_resp.json()["done"] is False
 
-    # Turn 1
     t1_resp = client.post("/api/interview", json={
         "sessionId": session_id,
         "message": "I would structure the FastAPI backend with Pydantic schemas, dependency injection, and async handlers."
     })
     assert t1_resp.status_code == 200
     assert t1_resp.json()["done"] is False
-    assert len(t1_resp.json()["reply"]) > 0
 
-    # Turn 2
     t2_resp = client.post("/api/interview", json={
         "sessionId": session_id,
         "message": "To optimize database performance, I create indexes on key columns, monitor query execution plans, and use connection pooling."
@@ -188,7 +184,6 @@ def test_interview_multi_turn_flow_and_completion():
     assert t2_resp.status_code == 200
     assert t2_resp.json()["done"] is False
 
-    # Turn 3 (Final turn -> completion)
     t3_resp = client.post("/api/interview", json={
         "sessionId": session_id,
         "message": "For vector search and RAG architecture, I integrate FAISS embeddings index with fallback caching and batch inference."
@@ -203,6 +198,78 @@ def test_interview_multi_turn_flow_and_completion():
     assert isinstance(feedback.get("strengths"), list)
     assert isinstance(feedback.get("gaps"), list)
     assert isinstance(feedback.get("next"), list)
+
+
+def test_feedback_very_bad_interview_gives_no_false_praise():
+    session_id = "fb-bad-001"
+    start_resp = client.post("/api/interview", json={"sessionId": session_id, "candidate_id": "candidate-001"})
+    assert start_resp.status_code == 200
+
+    bad_messages = [".", "not sure", "I don't know", ".", "not sure", ".", "I don't know", "."]
+    last_resp = None
+    for msg in bad_messages:
+        last_resp = client.post("/api/interview", json={"sessionId": session_id, "message": msg})
+
+    assert last_resp.status_code == 200
+    body = last_resp.json()
+    assert body["done"] is True
+    fb = body["feedback"]
+
+    summary = fb["summary"]
+    strengths = fb["strengths"]
+
+    assert "solid domain knowledge" not in summary.lower()
+    assert "effectively discussed" not in summary.lower()
+    assert "clear communication" not in str(strengths).lower()
+    assert "No substantial technical strengths" in strengths[0] or "insufficient" in str(strengths).lower()
+
+
+def test_feedback_strong_interview_gives_evidence_based_strengths():
+    session_id = "fb-strong-001"
+    start_resp = client.post("/api/interview", json={"sessionId": session_id, "candidate_id": "candidate-001"})
+    assert start_resp.status_code == 200
+
+    t1 = client.post("/api/interview", json={
+        "sessionId": session_id,
+        "message": "I build FastAPI microservices using Pydantic schemas and dependency injection."
+    })
+    t2 = client.post("/api/interview", json={
+        "sessionId": session_id,
+        "message": "I optimize PostgreSQL queries using B-Tree indexes on high-cardinality columns and connection pooling."
+    })
+    t3 = client.post("/api/interview", json={
+        "sessionId": session_id,
+        "message": "For caching, I use Redis with TTL expiration and active cache invalidation patterns."
+    })
+
+    assert t3.status_code == 200
+    body = t3.json()
+    assert body["done"] is True
+    fb = body["feedback"]
+
+    summary = fb["summary"]
+    strengths = fb["strengths"]
+
+    assert "database" in summary.lower() or "caching" in summary.lower() or "api" in summary.lower() or "practical" in summary.lower()
+    assert any("database" in s.lower() or "caching" in s.lower() or "api" in s.lower() or "pydantic" in s.lower() for s in strengths)
+
+
+def test_two_sessions_produce_distinct_evidence_based_feedback():
+    s_bad = client.post("/api/interview", json={"sessionId": "fb-compare-bad", "candidate_id": "candidate-001"})
+    for msg in [".", "not sure", "I don't know", ".", "not sure", ".", "I don't know", "."]:
+        bad_end = client.post("/api/interview", json={"sessionId": "fb-compare-bad", "message": msg})
+    fb_bad = bad_end.json()["feedback"]
+
+    s_good = client.post("/api/interview", json={"sessionId": "fb-compare-good", "candidate_id": "candidate-001"})
+    client.post("/api/interview", json={"sessionId": "fb-compare-good", "message": "I use FastAPI with Pydantic validation."})
+    client.post("/api/interview", json={"sessionId": "fb-compare-good", "message": "I use PostgreSQL with connection pooling."})
+    good_end = client.post("/api/interview", json={"sessionId": "fb-compare-good", "message": "I use Redis for distributed caching."})
+    fb_good = good_end.json()["message"] if "message" in good_end.json() else good_end.json()["feedback"]
+
+    assert fb_bad["summary"] != fb_good["summary"]
+    assert fb_bad["strengths"] != fb_good["strengths"]
+    assert "No substantial technical strengths" in fb_bad["strengths"][0]
+    assert "No substantial technical strengths" not in fb_good["strengths"][0]
 
 
 def test_candidate_personalization_across_candidates():

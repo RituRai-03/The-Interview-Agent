@@ -129,7 +129,6 @@ def find_authoritative_candidate(candidate_id_or_query: str) -> dict[str, Any] |
     candidates = bootstrap.get("candidates", [])
     q = str(candidate_id_or_query).strip().lower()
 
-    # Standardize normalization for IDs like CAND-001, cand-001, candidate-001
     q_num = re.sub(r'[^0-9]', '', q)
 
     for c in candidates:
@@ -169,18 +168,15 @@ def evaluate_answer_quality(answer_text: str) -> str:
     cleaned = answer_text.strip()
     lowered = cleaned.lower()
 
-    # 1. Punctuation-only / No alphanumeric characters
     alphanumeric_chars = re.sub(r'[^a-zA-Z0-9]', '', cleaned)
     if len(alphanumeric_chars) == 0:
         return ANSWER_QUALITY_PUNCTUATION
 
-    # 2. Uncertainty ("I don't know")
     if any(phrase in lowered for phrase in UNCERTAINTY_PHRASES):
         words = lowered.split()
         if len(words) < 12:
             return ANSWER_QUALITY_UNCERTAINTY
 
-    # 3. Very Short answers (1-2 words like "Python", "yes", "no", "SQL", "FastAPI")
     words = cleaned.split()
     if len(words) <= 2:
         return ANSWER_QUALITY_VERY_SHORT
@@ -189,7 +185,7 @@ def evaluate_answer_quality(answer_text: str) -> str:
 
 
 # ============================================================================
-# PYDANTIC MODELS (TECHNICAL SPEC COMPLIANT + HYBRID SAFE)
+# PYDANTIC MODELS
 # ============================================================================
 
 class FeedbackModel(BaseModel):
@@ -268,7 +264,6 @@ def health_check() -> dict[str, str]:
 
 @app.get("/api/candidates/{candidate_id}")
 def verify_candidate_endpoint(candidate_id: str) -> dict[str, Any]:
-    """Verification endpoint to lookup authoritative candidate record."""
     candidate = find_authoritative_candidate(candidate_id)
     if candidate is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
@@ -310,37 +305,34 @@ def get_interview_report(session_id: str) -> InterviewReportResponse:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     candidate = session.get("candidate", {}) or {}
-    candidate_metrics = candidate.get("metrics", {}) or {}
     requirements = session.get("requirements", {}) or {}
     curriculum = session.get("curriculum", {}) or {}
-
     required_modules = requirements.get("required_modules", []) or []
     conversation = session.get("conversation", []) or []
+
+    analysis = analyze_interview_transcript(conversation)
     answers = [item for item in conversation if isinstance(item, dict) and item.get("answer")]
 
-    technical_score = candidate_metrics.get("technical_score", 0)
-    communication_score = candidate_metrics.get("communication_score", 0)
-    problem_solving_score = candidate_metrics.get("problem_solving_score", 0)
-    project_completion = candidate_metrics.get("project_completion", 0)
-
-    normalized_scores = [technical_score, communication_score, problem_solving_score, project_completion]
-    average_score = sum(normalized_scores) / len(normalized_scores) if normalized_scores else 0
+    if not analysis["has_meaningful_evidence"]:
+        candidate_score = 15.0
+        curriculum_progress = 10.0
+    else:
+        base_score = min(100.0, (analysis["meaningful_count"] / max(1, MAX_INTERVIEW_TURNS)) * 85 + len(analysis["demonstrated_concepts"]) * 5)
+        candidate_score = round(base_score, 2)
+        curriculum_progress = round(min(100.0, candidate_score + 10), 2)
 
     coverage = []
     for module in required_modules:
         module_lower = module.lower()
-        if any(module_lower in str(item).lower() for item in conversation):
+        if any(module_lower in str(item.get("answer", "")).lower() for item in conversation if isinstance(item, dict)):
             coverage.append(module)
-
-    coverage_ratio = (len(coverage) / len(required_modules)) if required_modules else 0
-    curriculum_progress = round(min(100.0, coverage_ratio * 100 + (average_score / 100) * 50), 2)
 
     report = InterviewReportResponse(
         session_id=session_id,
         candidate_id=session.get("candidate_id", ""),
         candidate_name=candidate.get("name", "Unknown Candidate"),
         interview_type=session.get("interview_type", "technical"),
-        candidate_score=round(average_score, 2),
+        candidate_score=candidate_score,
         curriculum_progress=curriculum_progress,
         required_module_coverage=coverage,
         recommended_next_focus=requirements.get("suggested_next_topic") or curriculum.get("title") or "technical depth",
@@ -367,13 +359,11 @@ def handle_interview_api(payload: UnifiedInterviewRequest) -> UnifiedInterviewRe
     if not req_candidate_id and payload.candidate and isinstance(payload.candidate, dict):
         req_candidate_id = payload.candidate.get("id")
 
-    # A) Subsequent turn in ongoing session
     if req_session_id and req_message is not None:
         session = get_session(req_session_id) or sessions.get(req_session_id)
         if session:
             bound_cid = session.get("candidate_id")
             if req_candidate_id and bound_cid:
-                # Check candidate session binding -> prevent mid-session candidate switching
                 cand_req = find_authoritative_candidate(req_candidate_id)
                 cand_bound = find_authoritative_candidate(bound_cid)
                 if cand_req and cand_bound and cand_req.get("id") != cand_bound.get("id"):
@@ -383,7 +373,6 @@ def handle_interview_api(payload: UnifiedInterviewRequest) -> UnifiedInterviewRe
                     )
         return process_interview_turn(req_session_id, req_message)
 
-    # B) Session ID provided without candidate or message
     if req_session_id and not payload.candidate and not req_candidate_id:
         if session_exists(req_session_id) or req_session_id in sessions:
             if req_message is not None:
@@ -393,7 +382,6 @@ def handle_interview_api(payload: UnifiedInterviewRequest) -> UnifiedInterviewRe
         else:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
-    # C) Initialization of a new interview session with Server-Side Authoritative Verification
     if not req_candidate_id:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -410,7 +398,6 @@ def handle_interview_api(payload: UnifiedInterviewRequest) -> UnifiedInterviewRe
 
 @app.post("/api/interview/{session_id}/answer")
 def answer_interview_question_legacy(session_id: str, payload: InterviewAnswerRequest) -> dict[str, Any]:
-    """Helper route for legacy API callers."""
     res = process_interview_turn(session_id, payload.answer)
     session = get_session(session_id) or sessions.get(session_id) or {}
     conv = session.get("conversation", [])
@@ -431,7 +418,7 @@ def answer_interview_question_legacy(session_id: str, payload: InterviewAnswerRe
 
 
 # ============================================================================
-# CORE INTERVIEW LOGIC & INTELLIGENT ADAPTATION
+# CORE INTERVIEW LOGIC
 # ============================================================================
 
 def start_new_interview_session(session_id: str, candidate: dict[str, Any], interview_type: str) -> UnifiedInterviewResponse:
@@ -501,7 +488,6 @@ def process_interview_turn(session_id: str, message_text: str) -> UnifiedIntervi
     conversation = session.get("conversation", []) or []
     current_question = session.get("current_question", "")
 
-    # Classify the latest answer before updating state!
     quality = evaluate_answer_quality(message_text)
 
     turn_entry = {
@@ -524,7 +510,6 @@ def process_interview_turn(session_id: str, message_text: str) -> UnifiedIntervi
 
     total_attempts = len(conversation)
 
-    # Complete interview ONLY after MAX_INTERVIEW_TURNS meaningful answers or after 8 total attempts
     if meaningful_count >= MAX_INTERVIEW_TURNS or total_attempts >= 8:
         feedback_dict = generate_personalized_feedback(candidate, curriculum, conversation)
         feedback_obj = FeedbackModel(**feedback_dict)
@@ -556,7 +541,6 @@ def process_interview_turn(session_id: str, message_text: str) -> UnifiedIntervi
             status="completed",
         )
 
-    # Next Turn Question/Clarification Logic driven by Answer Quality
     next_question = generate_personalized_question(
         candidate=candidate,
         curriculum=curriculum,
@@ -596,7 +580,7 @@ def process_interview_turn(session_id: str, message_text: str) -> UnifiedIntervi
 
 
 # ============================================================================
-# PERSONALIZED & INTELLIGENT QUESTION GENERATION
+# PERSONALIZED QUESTION & EVIDENCE-BASED FEEDBACK GENERATION
 # ============================================================================
 
 def generate_personalized_question(
@@ -608,7 +592,6 @@ def generate_personalized_question(
     latest_quality: Optional[str] = None,
     latest_answer: Optional[str] = None,
 ) -> str:
-    # 1. Handle Invalid/Punctuation-only, Uncertainty, and Short Answers (STRICT NO-FALSE-PRAISE RULE)
     if latest_quality == ANSWER_QUALITY_PUNCTUATION:
         return (
             "It looks like your response may not have come through clearly. "
@@ -629,7 +612,6 @@ def generate_personalized_question(
             "Could you explain one key advantage and one trade-off of that choice?"
         )
 
-    # 2. Try Gemini LLM if client is available
     if gemini_client is not None:
         try:
             model_name = os.getenv("OPENAI_MODEL") or "gemini-2.0-flash"
@@ -660,7 +642,6 @@ def generate_personalized_question(
         except Exception as err:
             print(f"Gemini LLM call failed, fallback used: {err}")
 
-    # 3. Deterministic Adaptive Fallback Mode
     return build_deterministic_question(candidate, curriculum, turn_index, latest_answer)
 
 
@@ -674,7 +655,6 @@ def build_deterministic_question(candidate: dict[str, Any], curriculum: dict[str
     failed_missions = [m.get("title") for m in missions if not m.get("passed") and not m.get("skipped")]
     passed_missions = [m.get("title") for m in missions if m.get("passed")]
 
-    # If latest answer mentioned specific concepts, build an answer-aware follow-up!
     if latest_answer and len(latest_answer.strip()) > 10:
         ans_lower = latest_answer.lower()
         if "postgres" in ans_lower or "sql" in ans_lower or "index" in ans_lower or "database" in ans_lower:
@@ -725,7 +705,7 @@ def build_deterministic_question(candidate: dict[str, Any], curriculum: dict[str
             f"How would you approach solving bottlenecks and query trade-offs when scaling '{target_growth}' in a production environment?"
         )
 
-    else: # Turn 2
+    else:
         return (
             f"For our final technical topic, let's explore system design and AI integration: "
             f"If you were tasked with incorporating Vector Search or an LLM RAG pipeline into your application architecture, "
@@ -733,29 +713,87 @@ def build_deterministic_question(candidate: dict[str, Any], curriculum: dict[str
         )
 
 
+def analyze_interview_transcript(conversation: list[dict[str, Any]]) -> dict[str, Any]:
+    meaningful_turns = []
+    uncertain_turns = []
+    punctuation_turns = []
+    short_turns = []
+
+    demonstrated_concepts = set()
+
+    for turn in conversation:
+        if not isinstance(turn, dict):
+            continue
+        ans = turn.get("answer", "")
+        q_type = turn.get("quality") or evaluate_answer_quality(ans)
+
+        if q_type == ANSWER_QUALITY_MEANINGFUL:
+            meaningful_turns.append(turn)
+            ans_lower = ans.lower()
+            if "postgres" in ans_lower or "sql" in ans_lower or "database" in ans_lower:
+                demonstrated_concepts.add("relational database architecture & query optimization")
+            if "index" in ans_lower or "indexing" in ans_lower:
+                demonstrated_concepts.add("database indexing trade-offs")
+            if "connection pool" in ans_lower or "pooling" in ans_lower:
+                demonstrated_concepts.add("connection pooling and resource management")
+            if "fastapi" in ans_lower or "pydantic" in ans_lower or "api" in ans_lower:
+                demonstrated_concepts.add("production API architecture & Pydantic validation")
+            if "async" in ans_lower or "handler" in ans_lower:
+                demonstrated_concepts.add("asynchronous request handling")
+            if "redis" in ans_lower or "cache" in ans_lower or "caching" in ans_lower:
+                demonstrated_concepts.add("Redis caching & invalidation strategies")
+            if "faiss" in ans_lower or "vector" in ans_lower or "rag" in ans_lower or "embedding" in ans_lower:
+                demonstrated_concepts.add("Vector search & RAG pipeline integration")
+            if "etl" in ans_lower or "pipeline" in ans_lower or "spark" in ans_lower:
+                demonstrated_concepts.add("ETL pipeline construction & transformation logic")
+
+        elif q_type == ANSWER_QUALITY_UNCERTAINTY:
+            uncertain_turns.append(turn)
+        elif q_type == ANSWER_QUALITY_PUNCTUATION:
+            punctuation_turns.append(turn)
+        elif q_type == ANSWER_QUALITY_VERY_SHORT:
+            short_turns.append(turn)
+
+    return {
+        "meaningful_count": len(meaningful_turns),
+        "uncertain_count": len(uncertain_turns),
+        "punctuation_count": len(punctuation_turns),
+        "short_count": len(short_turns),
+        "total_turns": len(conversation),
+        "demonstrated_concepts": list(demonstrated_concepts),
+        "has_meaningful_evidence": len(meaningful_turns) > 0,
+    }
+
+
 def generate_personalized_feedback(
     candidate: dict[str, Any],
     curriculum: dict[str, Any],
     conversation: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    analysis = analyze_interview_transcript(conversation)
+
     if gemini_client is not None:
         try:
             model_name = os.getenv("OPENAI_MODEL") or "gemini-2.0-flash"
             conv_text = "\n".join(
-                f"Q: {t.get('question')}\nA: {t.get('answer')}" for t in conversation if isinstance(t, dict)
+                f"Q: {t.get('question')}\nA: {t.get('answer')} [Quality: {t.get('quality', 'unknown')}]"
+                for t in conversation if isinstance(t, dict)
             )
 
             prompt = (
-                f"You are a technical interviewer evaluating candidate {candidate.get('name')} ({candidate.get('role')}).\n"
-                f"Candidate skills: {candidate.get('skills')}\n"
-                f"Growth areas: {candidate.get('growth_areas')}\n"
-                f"Interview Conversation:\n{conv_text}\n\n"
-                f"Return a JSON object with EXACTLY these four fields:\n"
-                f"- summary: a concise string paragraph summarizing their performance\n"
-                f"- strengths: array of 2-3 specific strength strings\n"
-                f"- gaps: array of 2-3 specific gap/growth strings\n"
-                f"- next: array of 2-3 specific actionable next step strings\n"
-                f"Do not output markdown codeblocks if possible, or plain valid JSON."
+                f"You are an objective technical interviewer evaluating candidate {candidate.get('name')} ({candidate.get('role')}).\n"
+                f"CANDIDATE PROFILE CONTEXT (FOR BACKGROUND ONLY — DO NOT USE AS INTERVIEW EVIDENCE):\n"
+                f"- Candidate skills: {candidate.get('skills')}\n"
+                f"- Growth areas: {candidate.get('growth_areas')}\n"
+                f"- Past Bootcamp Missions: {len(candidate.get('missions', []))} missions\n\n"
+                f"ACTUAL INTERVIEW TRANSCRIPT (SOLE EVIDENCE SOURCE FOR EVALUATION):\n{conv_text}\n\n"
+                f"STRICT INSTRUCTIONS:\n"
+                f"1. Evaluate ONLY performance demonstrated in the interview transcript.\n"
+                f"2. Candidate profile, skills, experience, and past missions are CONTEXT ONLY. DO NOT claim the candidate demonstrated a skill unless the transcript contains actual evidence of that skill!\n"
+                f"3. DO NOT praise unanswered, punctuation-only ('.'), or uncertain ('not sure') responses. NEVER say 'solid domain knowledge' or 'clear communication' if candidate gave no meaningful technical answers!\n"
+                f"4. If there is insufficient evidence to assess a skill or topic, explicitly state that evidence was insufficient.\n"
+                f"5. Every strength MUST be traceable to an actual candidate answer in the transcript.\n"
+                f"6. Return a JSON object with EXACTLY four fields: summary, strengths, gaps, next.\n"
             )
 
             response = gemini_client.models.generate_content(
@@ -780,38 +818,61 @@ def generate_personalized_feedback(
 def build_fallback_feedback(candidate: dict[str, Any], conversation: list[dict[str, Any]]) -> dict[str, Any]:
     name = candidate.get("name", "The candidate")
     role = candidate.get("role", "Software Engineer")
-    skills = candidate.get("skills", ["Python", "REST APIs"])
-    growth_areas = candidate.get("growth_areas", ["System Design", "Testing"])
-    missions = candidate.get("missions", [])
+    analysis = analyze_interview_transcript(conversation)
 
-    passed_count = sum(1 for m in missions if m.get("passed"))
-    failed_missions = [m.get("title") for m in missions if not m.get("passed") and not m.get("skipped")]
+    meaningful_count = analysis["meaningful_count"]
+    uncertain_count = analysis["uncertain_count"]
+    punctuation_count = analysis["punctuation_count"]
+    concepts = analysis["demonstrated_concepts"]
 
+    # SCENARIO A: Weak / Invalid / Unanswered / Punctuation-Heavy Interview
+    if not analysis["has_meaningful_evidence"]:
+        summary = (
+            f"The interview provided limited evidence of {name}'s technical abilities as a {role} "
+            "because the candidate gave unanswered, punctuation-only, or uncertain responses throughout the session."
+        )
+        strengths = [
+            "No substantial technical strengths could be reliably assessed from this interview session."
+        ]
+        gaps = [
+            f"Targeted technical competencies for {role} could not be evaluated due to incomplete or unanswered responses.",
+            "Demonstrated technical reasoning and communication were insufficient during the interview."
+        ]
+        next_steps = [
+            "Practice explaining technical approaches and trade-offs aloud.",
+            f"Review core fundamentals and system design concepts relevant to {role}.",
+            "Reattempt the technical interview with detailed, structured responses."
+        ]
+        return {
+            "summary": summary,
+            "strengths": strengths,
+            "gaps": gaps,
+            "next": next_steps,
+        }
+
+    # SCENARIO B: Strong / Evidence-Based Interview
+    concept_str = ", ".join(concepts) if concepts else "core software engineering principles"
     summary = (
-        f"{name} demonstrated solid domain knowledge as a {role} during the interview. "
-        f"They effectively discussed their core skills in {', '.join(skills[:3])} and showed strong alignment with the "
-        f"31-Day AI Engineering Bootcamp curriculum ({passed_count} missions passed). "
-        f"Addressing growth areas such as {', '.join(growth_areas[:2])} will help elevate their engineering impact to senior level."
+        f"During the interview, {name} demonstrated practical technical understanding in {concept_str}. "
+        "Their responses provided evidence of engineering trade-off awareness and technical problem-solving."
     )
 
-    strengths = [
-        f"Strong technical foundational knowledge in {skills[0] if skills else 'core development'}.",
-        f"Clear communication when walking through engineering solutions and trade-offs.",
-        f"Completed {passed_count} bootcamp learning missions with consistent commitment."
-    ]
+    strengths = []
+    for concept in concepts[:3]:
+        strengths.append(f"Demonstrated practical knowledge of {concept} in candidate responses.")
+    if not strengths:
+        strengths.append(f"Provided structured technical answers relevant to {role} questions.")
 
     gaps = [
-        f"Could deepen technical coverage in key growth area: {growth_areas[0] if growth_areas else 'system design'}.",
+        f"Could expand technical depth when addressing complex distributed edge cases in {role}.",
     ]
-    if failed_missions:
-        gaps.append(f"Faced challenges in bootcamp topic: {failed_missions[0]}.")
-    else:
-        gaps.append("Needs further practice with high-concurrency production edge cases.")
+    if uncertain_count > 0 or punctuation_count > 0:
+        gaps.append("Some topics required simplified follow-ups or additional clarification before technical details were provided.")
 
     next_steps = [
-        f"Focus on practical exercises in {growth_areas[0] if growth_areas else 'system design'}.",
-        "Review vector database indexing, RAG retrieval techniques, and production MLOps.",
-        "Continue completing remaining 31-Day AI Engineering Bootcamp capstone missions."
+        f"Further refine production failure handling and concurrency patterns in {role}.",
+        "Review vector database indexing, RAG evaluation frameworks, and production MLOps.",
+        "Continue completing 31-Day AI Engineering Bootcamp capstone missions."
     ]
 
     return {
