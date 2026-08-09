@@ -9,11 +9,24 @@ This module provides type-safe validation for:
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class MissionModel(BaseModel):
     """Represents a single mission/assignment in the curriculum."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "title": "Python Fundamentals - Part 1",
+                "day": 2,
+                "passed": True,
+                "skipped": False,
+                "attempts": 1,
+                "commit_days": 1,
+            }
+        }
+    )
 
     title: str = Field(..., description="Mission title")
     day: int = Field(..., ge=1, le=31, description="Curriculum day (1-31)")
@@ -27,18 +40,6 @@ class MissionModel(BaseModel):
     def validate_mission_status(cls, v: bool) -> bool:
         """Validate that mission status is boolean."""
         return v
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "title": "Python Fundamentals - Part 1",
-                "day": 2,
-                "passed": True,
-                "skipped": False,
-                "attempts": 1,
-                "commit_days": 1,
-            }
-        }
 
 
 class CandidateModel(BaseModel):
@@ -62,8 +63,8 @@ class CandidateModel(BaseModel):
             return []
         return [MissionModel(**m) if isinstance(m, dict) else m for m in v]
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "candidate-001",
                 "name": "Aarav Sharma",
@@ -90,6 +91,7 @@ class CandidateModel(BaseModel):
                 ],
             }
         }
+    )
 
 
 class CurriculumDayRangeModel(BaseModel):
@@ -110,14 +112,8 @@ class CurriculumDayRangeModel(BaseModel):
 class CurriculumModuleModel(BaseModel):
     """Represents a module in the 31-day curriculum."""
 
-    module_id: str = Field(..., description="Unique module identifier")
-    module_name: str = Field(..., description="Module name")
-    days: CurriculumDayRangeModel = Field(..., description="Day range for module")
-    topics: list[str] = Field(default_factory=list, description="Topics covered")
-    key_skills: list[str] = Field(default_factory=list, description="Key skills developed")
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "module_id": "m1",
                 "module_name": "Environment & Tooling",
@@ -126,10 +122,37 @@ class CurriculumModuleModel(BaseModel):
                 "key_skills": ["development environment", "git workflow"],
             }
         }
+    )
+
+    module_id: str = Field(..., description="Unique module identifier")
+    module_name: str = Field(..., description="Module name")
+    days: CurriculumDayRangeModel = Field(..., description="Day range for module")
+    topics: list[str] = Field(default_factory=list, description="Topics covered")
+    key_skills: list[str] = Field(default_factory=list, description="Key skills developed")
 
 
 class CurriculumModel(BaseModel):
     """Represents the complete 31-day curriculum."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "title": "31-Day AI Engineering Bootcamp",
+                "total_days": 31,
+                "modules": [
+                    {
+                        "module_id": "m1",
+                        "module_name": "Environment & Tooling",
+                        "days": {"start": 1, "end": 2},
+                        "topics": ["Command line", "Git"],
+                        "key_skills": ["development environment"],
+                    }
+                ],
+                "focus_areas": ["Python", "APIs", "AI"],
+                "requirements": {"minimum_progress": 75},
+            }
+        }
+    )
 
     title: str = Field(..., description="Curriculum title")
     subtitle: Optional[str] = Field(default=None, description="Curriculum subtitle")
@@ -147,25 +170,6 @@ class CurriculumModel(BaseModel):
         if not isinstance(v, list):
             return []
         return [CurriculumModuleModel(**m) if isinstance(m, dict) else m for m in v]
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "title": "31-Day AI Engineering Bootcamp",
-                "total_days": 31,
-                "modules": [
-                    {
-                        "module_id": "m1",
-                        "module_name": "Environment & Tooling",
-                        "days": {"start": 1, "end": 2},
-                        "topics": ["Command line", "Git"],
-                        "key_skills": ["development environment"],
-                    }
-                ],
-                "focus_areas": ["Python", "APIs", "AI"],
-                "requirements": {"minimum_progress": 75},
-            }
-        }
 
 
 class CandidatesPayloadModel(BaseModel):

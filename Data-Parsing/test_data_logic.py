@@ -151,7 +151,7 @@ class TestProgressCalculation:
         """Test progress with skipped missions (not counted)."""
         missions = [
             MissionModel(title="Mission 1", day=1, passed=True, attempts=1),
-            MissionModel(title="Mission 2", day=2, passed=True, skipped=True, attempts=0),
+            MissionModel(title="Mission 2", day=2, passed=True, skipped=True, attempts=1),
             MissionModel(title="Mission 3", day=3, passed=True, attempts=1),
         ]
         candidate = CandidateModel(id="test", name="Test", role="Engineer", experience=1, missions=missions)
@@ -168,7 +168,7 @@ class TestProgressCalculation:
         missions = [
             MissionModel(title="Mission 1", day=1, passed=True, attempts=1, commit_days=1),
             MissionModel(title="Mission 2", day=2, passed=False, attempts=3, commit_days=2),
-            MissionModel(title="Mission 3", day=3, passed=True, skipped=True, attempts=0, commit_days=0),
+            MissionModel(title="Mission 3", day=3, passed=False, skipped=True, attempts=1, commit_days=0),
             MissionModel(title="Mission 4", day=4, passed=True, attempts=2, commit_days=2),
         ]
         candidate = CandidateModel(id="test", name="Test", role="Engineer", experience=1, missions=missions)
@@ -179,7 +179,7 @@ class TestProgressCalculation:
         assert progress["passed_missions"] == 2
         assert progress["failed_missions"] == 1
         assert progress["skipped_missions"] == 1
-        assert progress["total_attempts"] == 6  # 1 + 3 + 0 + 2
+        assert progress["total_attempts"] == 6  # 1 + 3 + 1 + 2
         assert progress["total_commit_days"] == 5  # 1 + 2 + 0 + 2
         assert progress["average_attempts"] == 2.0  # (1+3+2)/3
         assert progress["first_try_rate"] == 50.0  # Only 1st mission was first-try

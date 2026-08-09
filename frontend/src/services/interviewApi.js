@@ -1,73 +1,63 @@
-const API_URL =
-  import.meta.env.VITE_API_URL ||
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
   "http://localhost:8000";
 
-
-// Start a new interview
-export async function startInterview(
-  candidateInput,
-  interviewType = "technical"
-) {
-  const candidateId =
-    typeof candidateInput === "string"
-      ? candidateInput
-      : candidateInput?.candidate_id ||
-        candidateInput?.id ||
-        "candidate-001";
-
+/**
+ * Start a new interview session
+ * @param {string} sessionId - Unique session identifier
+ * @param {object} candidate - Candidate object from candidates.json
+ * @returns {Promise<object>} Response with { reply, done, feedback? }
+ */
+export async function startInterview(sessionId, candidate) {
   const response = await fetch(
-    `${API_URL}/api/interview`,
+    `${API_BASE_URL}/api/interview`,
     {
       method: "POST",
-
       headers: {
         "Content-Type": "application/json",
       },
-
       body: JSON.stringify({
-        candidate_id: candidateId,
-        interview_type: interviewType,
-        conversation: [],
+        sessionId: sessionId,
+        candidate: candidate,
       }),
     }
   );
 
   if (!response.ok) {
-    const detail = await response.text();
+    const errorText = await response.text();
     throw new Error(
-      `Failed to start interview: ${detail}`
+      `Failed to start interview: ${response.status} - ${errorText}`
     );
   }
 
   return response.json();
 }
 
-
-// Send candidate's answer
-export async function sendInterviewMessage(
-  sessionId,
-  message
-) {
+/**
+ * Send a message during an interview
+ * @param {string} sessionId - Unique session identifier
+ * @param {string} message - Candidate's message
+ * @returns {Promise<object>} Response with { reply, done, feedback? }
+ */
+export async function sendInterviewMessage(sessionId, message) {
   const response = await fetch(
-    `${API_URL}/api/interview/${sessionId}/answer`,
+    `${API_BASE_URL}/api/interview`,
     {
       method: "POST",
-
       headers: {
         "Content-Type": "application/json",
       },
-
       body: JSON.stringify({
-        answer: message,
-        transcript_turn: "candidate_answer",
+        sessionId: sessionId,
+        message: message,
       }),
     }
   );
 
   if (!response.ok) {
-    const detail = await response.text();
+    const errorText = await response.text();
     throw new Error(
-      `Failed to send message: ${detail}`
+      `Failed to send message: ${response.status} - ${errorText}`
     );
   }
 

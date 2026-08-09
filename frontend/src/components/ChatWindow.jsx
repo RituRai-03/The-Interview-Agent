@@ -8,6 +8,7 @@ function ChatWindow({
   onSend,
   loading,
   done,
+  candidate,
 }) {
   const [input, setInput] = useState("");
 
@@ -33,25 +34,45 @@ function ChatWindow({
     setInput("");
   }
 
+  function handleKeyDown(e) {
+    // Enter to send (Shift+Enter for newline)
+    if (
+      e.key === "Enter" &&
+      !e.shiftKey &&
+      !loading &&
+      !done
+    ) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  }
+
   return (
     <div className="chat-container">
 
       <div className="chat-header">
 
-        <div>
-          <h2>Interview Session</h2>
-          <p>
-            Answer naturally and clearly.
-          </p>
+        <div className="chat-header-info">
+          {candidate && (
+            <div className="chat-candidate">
+              <h3>{candidate.name}</h3>
+              <p>{candidate.role}</p>
+            </div>
+          )}
+          <div className="chat-status">
+            <h2>Interview Session</h2>
+            <p>
+              {done
+                ? "✓ Interview Complete"
+                : "● In Progress"}
+            </p>
+          </div>
         </div>
 
         {!done && (
           <div className="live-badge">
-
             <span></span>
-
             LIVE
-
           </div>
         )}
 
@@ -60,7 +81,7 @@ function ChatWindow({
 
       <div className="messages">
 
-        {messages.map((message) => (
+        {messages.map(message => (
           <ChatMessage
             key={message.id}
             message={message}
@@ -81,13 +102,15 @@ function ChatWindow({
           onSubmit={handleSubmit}
         >
 
-          <input
+          <textarea
             value={input}
-            onChange={(e) =>
+            onChange={e =>
               setInput(e.target.value)
             }
-            placeholder="Type your answer..."
+            onKeyDown={handleKeyDown}
+            placeholder="Type your answer... (Shift+Enter for newline)"
             disabled={loading}
+            rows="3"
           />
 
           <button
@@ -95,6 +118,7 @@ function ChatWindow({
             disabled={
               loading || !input.trim()
             }
+            className="send-button"
           >
             Send
           </button>
@@ -102,11 +126,12 @@ function ChatWindow({
         </form>
 
       ) : (
-
-        <div className="completed-bar">
-          ✓ Interview completed
+        <div className="chat-complete">
+          <p>
+            Interview complete. Review your
+            feedback below.
+          </p>
         </div>
-
       )}
 
     </div>

@@ -1,0 +1,159 @@
+{
+  "curriculum": {
+    "title": "31-Day AI Engineering Bootcamp",
+    "subtitle": "From Fundamentals to Production",
+    "total_days": 31,
+    "modules": [
+      {
+        "module_id": "m1",
+        "module_name": "Environment & Tooling",
+        "days": {
+          "start": 1,
+          "end": 2
+        },
+        "topics": [
+          "Command line & shell basics",
+          "Git & version control",
+          "Python environment setup",
+          "IDE & editor setup"
+        ],
+        "key_skills": ["development environment", "git workflow", "terminal proficiency"]
+      },
+      {
+        "module_id": "m2",
+        "module_name": "Python & Data Foundations",
+        "days": {
+          "start": 3,
+          "end": 8
+        },
+        "topics": [
+          "Python fundamentals",
+          "Data structures",
+          "Algorithms",
+          "Pandas & NumPy",
+          "Data manipulation",
+          "Data analysis"
+        ],
+        "key_skills": ["Python proficiency", "data handling", "algorithmic thinking"]
+      },
+      {
+        "module_id": "m3",
+        "module_name": "Embeddings & Vector Search",
+        "days": {
+          "start": 9,
+          "end": 12
+        },
+        "topics": [
+          "Embeddings fundamentals",
+          "Vector representations",
+          "Vector databases",
+          "Similarity search",
+          "FAISS & Pinecone"
+        ],
+        "key_skills": ["embedding generation", "vector databases", "similarity matching"]
+      },
+      {
+        "module_id": "m4",
+        "module_name": "LLM Core, Prompting & Fine-Tuning",
+        "days": {
+          "start": 13,
+          "end": 18
+        },
+        "topics": [
+          "LLM fundamentals & architecture",
+          "Prompt engineering",
+          "Prompt optimization",
+          "Fine-tuning techniques",
+          "RAG patterns",
+          "LLM APIs"
+        ],
+        "key_skills": ["prompt design", "LLM interaction", "fine-tuning", "RAG implementation"]
+      },
+      {
+        "module_id": "m5",
+        "module_name": "Chatbot Application Build",
+        "days": {
+          "start": 19,
+          "end": 22
+        },
+        "topics": [
+          "Chatbot architecture",
+          "Conversation state management",
+          "Context window management",
+          "Multi-turn interactions",
+          "Memory & persistence"
+        ],
+        "key_skills": ["chatbot design", "conversation handling", "state management"]
+      },
+      {
+        "module_id": "m6",
+        "module_name": "Agentic AI & MCP",
+        "days": {
+          "start": 23,
+          "end": 25
+        },
+        "topics": [
+          "Agent architecture",
+          "Tool integration",
+          "Model Context Protocol",
+          "Agent orchestration",
+          "ReAct patterns"
+        ],
+        "key_skills": ["agent design", "tool integration", "MCP usage", "orchestration"]
+      },
+      {
+        "module_id": "m7",
+        "module_name": "Evaluation, Security & Deployment",
+        "days": {
+          "start": 26,
+          "end": 28
+        },
+        "topics": [
+          "Evaluation metrics",
+          "A/B testing",
+          "Security best practices",
+          "Rate limiting & auth",
+          "Monitoring & observability"
+        ],
+        "key_skills": ["evaluation design", "security hardening", "monitoring"]
+      },
+      {
+        "module_id": "m8",
+        "module_name": "Production & Capstone",
+        "days": {
+          "start": 29,
+          "end": 31
+        },
+        "topics": [
+          "Production deployment",
+          "Scaling strategies",
+          "Cost optimization",
+          "Capstone project",
+          "Interview preparation"
+        ],
+        "key_skills": ["production engineering", "scaling", "optimization", "presentation"]
+      }
+    ],
+    "focus_areas": [
+      "Python fundamentals",
+      "REST API design",
+      "Database design",
+      "Embeddings & vectors",
+      "LLM integration",
+      "Prompt engineering",
+      "Chatbot architecture",
+      "Agent systems",
+      "System design",
+      "Interview readiness"
+    ],
+    "requirements": {
+      "minimum_progress": 75,
+      "required_modules": [
+        "Python & Data Foundations",
+        "Embeddings & Vector Search",
+        "LLM Core, Prompting & Fine-Tuning"
+      ],
+      "suggested_next_topic": "System design"
+    }
+  }
+}
