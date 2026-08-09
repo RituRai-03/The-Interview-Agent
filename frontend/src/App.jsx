@@ -36,23 +36,22 @@ function App() {
     setLoading(true);
     setError("");
 
-    const newSessionId = generateSessionId();
-
     try {
-      const data = await startInterview(
-        newSessionId,
-        candidate
-      );
+      const data = await startInterview(candidate);
 
-      setSessionId(newSessionId);
+      const nextSessionId = data.session_id;
+      setSessionId(nextSessionId);
 
       setStarted(true);
+
+      const openingQuestion =
+        data.reply || data.current_question || "";
 
       setMessages([
         {
           id: crypto.randomUUID(),
           role: "assistant",
-          content: data.reply,
+          content: openingQuestion,
         },
       ]);
 

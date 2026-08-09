@@ -84,6 +84,9 @@ class InterviewResponse(BaseModel):
     candidate: dict[str, Any]
     curriculum: dict[str, Any]
     status: str
+    current_question: str | None = None
+    reply: str | None = None
+    done: bool = False
     created_at: str
 
 
@@ -91,6 +94,8 @@ class InterviewAnswerResponse(BaseModel):
     session_id: str
     status: str
     current_question: str | None = None
+    reply: str | None = None
+    done: bool = False
     evaluation: dict[str, Any]
     conversation_count: int
 
@@ -251,6 +256,9 @@ def create_interview_session(payload: InterviewRequest) -> InterviewResponse:
         candidate=candidate,
         curriculum=curriculum,
         status="active",
+        current_question=current_question,
+        reply=current_question,
+        done=False,
         created_at=created_at,
     )
 
@@ -315,6 +323,8 @@ def answer_interview_question(session_id: str, payload: InterviewAnswerRequest) 
         session_id=session_id,
         status="active",
         current_question=new_question,
+        reply=new_question,
+        done=False,
         evaluation=evaluation,
         conversation_count=len(conversation),
     )

@@ -1,13 +1,20 @@
 const API_URL =
   import.meta.env.VITE_API_URL ||
-  "http://localhost:3000";
+  "http://localhost:8000";
 
 
 // Start a new interview
 export async function startInterview(
-  sessionId,
-  candidate
+  candidateInput,
+  interviewType = "technical"
 ) {
+  const candidateId =
+    typeof candidateInput === "string"
+      ? candidateInput
+      : candidateInput?.candidate_id ||
+        candidateInput?.id ||
+        "candidate-001";
+
   const response = await fetch(
     `${API_URL}/api/interview`,
     {
@@ -18,15 +25,17 @@ export async function startInterview(
       },
 
       body: JSON.stringify({
-        sessionId,
-        candidate,
+        candidate_id: candidateId,
+        interview_type: interviewType,
+        conversation: [],
       }),
     }
   );
 
   if (!response.ok) {
+    const detail = await response.text();
     throw new Error(
-      "Failed to start interview"
+      `Failed to start interview: ${detail}`
     );
   }
 
@@ -40,7 +49,7 @@ export async function sendInterviewMessage(
   message
 ) {
   const response = await fetch(
-    `${API_URL}/api/interview`,
+    `${API_URL}/api/interview/${sessionId}/answer`,
     {
       method: "POST",
 
@@ -49,15 +58,16 @@ export async function sendInterviewMessage(
       },
 
       body: JSON.stringify({
-        sessionId,
-        message,
+        answer: message,
+        transcript_turn: "candidate_answer",
       }),
     }
   );
 
   if (!response.ok) {
+    const detail = await response.text();
     throw new Error(
-      "Failed to send message"
+      `Failed to send message: ${detail}`
     );
   }
 
