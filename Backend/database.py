@@ -1,10 +1,26 @@
 import json
+import os
 import sqlite3
+import tempfile
 from pathlib import Path
 from typing import Any
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "interview_agent.db"
+
+
+def get_db_path() -> Path:
+    if os.getenv("VERCEL"):
+        return Path(tempfile.gettempdir()) / "interview_agent.db"
+    try:
+        test_file = BASE_DIR / ".write_test"
+        test_file.touch()
+        test_file.unlink()
+        return BASE_DIR / "interview_agent.db"
+    except Exception:
+        return Path(tempfile.gettempdir()) / "interview_agent.db"
+
+
+DB_PATH = get_db_path()
 
 
 def get_connection() -> sqlite3.Connection:

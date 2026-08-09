@@ -46,7 +46,22 @@ try:
 except Exception:
     HAS_DATA_LOGIC = False
 
-SESSION_STORE_PATH = BASE_DIR / "sessions.json"
+import tempfile
+
+
+def get_session_store_path() -> Path:
+    if os.getenv("VERCEL"):
+        return Path(tempfile.gettempdir()) / "sessions.json"
+    try:
+        test_file = BASE_DIR / ".write_test_session"
+        test_file.touch()
+        test_file.unlink()
+        return BASE_DIR / "sessions.json"
+    except Exception:
+        return Path(tempfile.gettempdir()) / "sessions.json"
+
+
+SESSION_STORE_PATH = get_session_store_path()
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
