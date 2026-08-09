@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -117,6 +118,77 @@ MAX_INTERVIEW_TURNS = 3
 
 
 # ============================================================================
+# AUTHORITATIVE CANDIDATE LOOKUP & VERIFICATION
+# ============================================================================
+
+def find_authoritative_candidate(candidate_id_or_query: str) -> dict[str, Any] | None:
+    if not candidate_id_or_query or not str(candidate_id_or_query).strip():
+        return None
+
+    bootstrap = parse_bootstrap_payload()
+    candidates = bootstrap.get("candidates", [])
+    q = str(candidate_id_or_query).strip().lower()
+
+    # Standardize normalization for IDs like CAND-001, cand-001, candidate-001
+    q_num = re.sub(r'[^0-9]', '', q)
+
+    for c in candidates:
+        cid = str(c.get("id", "")).strip().lower()
+        cid_num = re.sub(r'[^0-9]', '', cid)
+
+        if cid == q:
+            return c
+        if q_num and cid_num and q_num.zfill(3) == cid_num.zfill(3):
+            return c
+        if f"candidate-{q_num.zfill(3)}" == cid or f"cand-{q_num.zfill(3)}" == cid:
+            return c
+
+    return None
+
+
+# ============================================================================
+# ANSWER QUALITY CLASSIFICATION
+# ============================================================================
+
+ANSWER_QUALITY_PUNCTUATION = "punctuation_only"
+ANSWER_QUALITY_UNCERTAINTY = "uncertainty"
+ANSWER_QUALITY_VERY_SHORT = "very_short"
+ANSWER_QUALITY_MEANINGFUL = "meaningful"
+
+UNCERTAINTY_PHRASES = [
+    "don't know", "dont know", "not sure", "no idea", "no answer",
+    "not familiar", "dunno", "can't answer", "cant answer", "have no idea",
+    "i don't understand", "i dont understand", "uncertain"
+]
+
+
+def evaluate_answer_quality(answer_text: str) -> str:
+    if not answer_text or not answer_text.strip():
+        return ANSWER_QUALITY_PUNCTUATION
+
+    cleaned = answer_text.strip()
+    lowered = cleaned.lower()
+
+    # 1. Punctuation-only / No alphanumeric characters
+    alphanumeric_chars = re.sub(r'[^a-zA-Z0-9]', '', cleaned)
+    if len(alphanumeric_chars) == 0:
+        return ANSWER_QUALITY_PUNCTUATION
+
+    # 2. Uncertainty ("I don't know")
+    if any(phrase in lowered for phrase in UNCERTAINTY_PHRASES):
+        words = lowered.split()
+        if len(words) < 12:
+            return ANSWER_QUALITY_UNCERTAINTY
+
+    # 3. Very Short answers (1-2 words like "Python", "yes", "no", "SQL", "FastAPI")
+    words = cleaned.split()
+    if len(words) <= 2:
+        return ANSWER_QUALITY_VERY_SHORT
+
+    return ANSWER_QUALITY_MEANINGFUL
+
+
+# ============================================================================
 # PYDANTIC MODELS (TECHNICAL SPEC COMPLIANT + HYBRID SAFE)
 # ============================================================================
 
@@ -133,7 +205,8 @@ class UnifiedInterviewRequest(BaseModel):
     sessionId: Optional[str] = Field(default=None, alias="session_id")
     session_id: Optional[str] = None
     candidate: Optional[dict[str, Any]] = None
-    candidate_id: Optional[str] = None
+    candidate_id: Optional[str] = Field(default=None, alias="candidateId")
+    candidateId: Optional[str] = None
     message: Optional[str] = None
     answer: Optional[str] = None
     interview_type: str = "technical"
@@ -191,6 +264,18 @@ class InterviewReportResponse(BaseModel):
 @app.get("/health")
 def health_check() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/candidates/{candidate_id}")
+def verify_candidate_endpoint(candidate_id: str) -> dict[str, Any]:
+    """Verification endpoint to lookup authoritative candidate record."""
+    candidate = find_authoritative_candidate(candidate_id)
+    if candidate is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
+    return {
+        "verified": True,
+        "candidate": candidate
+    }
 
 
 @app.get("/api/interview")
@@ -275,27 +360,31 @@ def get_interview_report(session_id: str) -> InterviewReportResponse:
 
 @app.post("/api/interview", response_model=UnifiedInterviewResponse)
 def handle_interview_api(payload: UnifiedInterviewRequest) -> UnifiedInterviewResponse:
-    """
-    REQUIRED PUBLIC INTERVIEW API CONTRACT (POST /api/interview):
-    
-    1. Start Request:
-       {"sessionId": "abc-123", "candidate": {...}} -> {"reply": "...", "done": false}
-       
-    2. Turn Request:
-       {"sessionId": "abc-123", "message": "..."} -> {"reply": "...", "done": false}
-       
-    3. Final Response:
-       {"sessionId": "abc-123", "message": "..."} -> {"reply": "...", "done": true, "feedback": {...}}
-    """
     req_session_id = payload.sessionId or payload.session_id
     req_message = payload.message or payload.answer
 
-    # A) Subsequent turn in ongoing session (has sessionId + message)
+    req_candidate_id = payload.candidate_id or payload.candidateId
+    if not req_candidate_id and payload.candidate and isinstance(payload.candidate, dict):
+        req_candidate_id = payload.candidate.get("id")
+
+    # A) Subsequent turn in ongoing session
     if req_session_id and req_message is not None:
+        session = get_session(req_session_id) or sessions.get(req_session_id)
+        if session:
+            bound_cid = session.get("candidate_id")
+            if req_candidate_id and bound_cid:
+                # Check candidate session binding -> prevent mid-session candidate switching
+                cand_req = find_authoritative_candidate(req_candidate_id)
+                cand_bound = find_authoritative_candidate(bound_cid)
+                if cand_req and cand_bound and cand_req.get("id") != cand_bound.get("id"):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Cannot change candidate during an active interview session."
+                    )
         return process_interview_turn(req_session_id, req_message)
 
     # B) Session ID provided without candidate or message
-    if req_session_id and not payload.candidate and not payload.candidate_id:
+    if req_session_id and not payload.candidate and not req_candidate_id:
         if session_exists(req_session_id) or req_session_id in sessions:
             if req_message is not None:
                 return process_interview_turn(req_session_id, req_message)
@@ -304,33 +393,19 @@ def handle_interview_api(payload: UnifiedInterviewRequest) -> UnifiedInterviewRe
         else:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
-    # C) Initialization of a new interview session
-    candidate_data = payload.candidate
-    candidate_id = payload.candidate_id
-
-    if not candidate_data and not candidate_id:
+    # C) Initialization of a new interview session with Server-Side Authoritative Verification
+    if not req_candidate_id:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Either candidate object/id (to start session) or sessionId + message (for conversation turn) must be provided."
+            detail="Valid candidate ID is required to initialize an interview session."
         )
 
-    if candidate_data and isinstance(candidate_data, dict):
-        candidate_id = candidate_data.get("id") or candidate_id
-
-    bootstrap = parse_bootstrap_payload()
-    candidate = None
-    if candidate_id:
-        candidate = next((c for c in bootstrap["candidates"] if c.get("id") == candidate_id), None)
-
-    if not candidate and candidate_data and isinstance(candidate_data, dict):
-        if candidate_data.get("name") and candidate_data.get("role"):
-            candidate = candidate_data
-
-    if not candidate:
+    authoritative_candidate = find_authoritative_candidate(req_candidate_id)
+    if authoritative_candidate is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
 
     session_id = req_session_id or str(uuid.uuid4())
-    return start_new_interview_session(session_id, candidate, payload.interview_type)
+    return start_new_interview_session(session_id, authoritative_candidate, payload.interview_type)
 
 
 @app.post("/api/interview/{session_id}/answer")
@@ -339,7 +414,7 @@ def answer_interview_question_legacy(session_id: str, payload: InterviewAnswerRe
     res = process_interview_turn(session_id, payload.answer)
     session = get_session(session_id) or sessions.get(session_id) or {}
     conv = session.get("conversation", [])
-    
+
     return {
         "session_id": session_id,
         "status": session.get("status", "active"),
@@ -356,7 +431,7 @@ def answer_interview_question_legacy(session_id: str, payload: InterviewAnswerRe
 
 
 # ============================================================================
-# CORE INTERVIEW LOGIC
+# CORE INTERVIEW LOGIC & INTELLIGENT ADAPTATION
 # ============================================================================
 
 def start_new_interview_session(session_id: str, candidate: dict[str, Any], interview_type: str) -> UnifiedInterviewResponse:
@@ -365,11 +440,19 @@ def start_new_interview_session(session_id: str, candidate: dict[str, Any], inte
     requirements = bootstrap.get("requirements", {})
 
     created_at = datetime.now(timezone.utc).isoformat()
-    opening_question = generate_personalized_question(candidate, curriculum, requirements, turn_index=0, conversation=[])
+    opening_question = generate_personalized_question(
+        candidate=candidate,
+        curriculum=curriculum,
+        requirements=requirements,
+        turn_index=0,
+        conversation=[],
+        latest_quality=None,
+        latest_answer=None
+    )
 
     session_payload = {
         "session_id": session_id,
-        "candidate_id": candidate.get("id", "candidate-001"),
+        "candidate_id": candidate.get("id"),
         "candidate": candidate,
         "curriculum": curriculum,
         "requirements": requirements,
@@ -378,6 +461,7 @@ def start_new_interview_session(session_id: str, candidate: dict[str, Any], inte
         "created_at": created_at,
         "status": "active",
         "turn_count": 0,
+        "meaningful_turn_count": 0,
         "current_question": opening_question,
         "done": False,
     }
@@ -391,7 +475,7 @@ def start_new_interview_session(session_id: str, candidate: dict[str, Any], inte
         done=False,
         sessionId=session_id,
         session_id=session_id,
-        candidate_id=candidate.get("id", ""),
+        candidate_id=candidate.get("id"),
         status="active",
     )
 
@@ -417,28 +501,38 @@ def process_interview_turn(session_id: str, message_text: str) -> UnifiedIntervi
     conversation = session.get("conversation", []) or []
     current_question = session.get("current_question", "")
 
+    # Classify the latest answer before updating state!
+    quality = evaluate_answer_quality(message_text)
+
     turn_entry = {
         "role": "user",
         "question": current_question,
         "answer": message_text,
+        "quality": quality,
         "answered_at": datetime.now(timezone.utc).isoformat(),
     }
     conversation.append(turn_entry)
 
-    turn_count = session.get("turn_count", 0) + 1
     candidate = session.get("candidate", {})
     curriculum = session.get("curriculum", {})
     requirements = session.get("requirements", {})
 
-    if turn_count >= MAX_INTERVIEW_TURNS:
-        # Final Turn -> Complete Interview & Generate Structured Feedback
+    meaningful_count = session.get("meaningful_turn_count", 0)
+    if quality == ANSWER_QUALITY_MEANINGFUL:
+        meaningful_count += 1
+        session["meaningful_turn_count"] = meaningful_count
+
+    total_attempts = len(conversation)
+
+    # Complete interview ONLY after MAX_INTERVIEW_TURNS meaningful answers or after 8 total attempts
+    if meaningful_count >= MAX_INTERVIEW_TURNS or total_attempts >= 8:
         feedback_dict = generate_personalized_feedback(candidate, curriculum, conversation)
         feedback_obj = FeedbackModel(**feedback_dict)
 
         session["conversation"] = conversation
         session["status"] = "completed"
         session["done"] = True
-        session["turn_count"] = turn_count
+        session["turn_count"] = total_attempts
         session["feedback"] = feedback_dict
         session["current_question"] = None
 
@@ -446,7 +540,6 @@ def process_interview_turn(session_id: str, message_text: str) -> UnifiedIntervi
         persist_sessions_to_disk()
         update_session(session_id, session)
 
-        # Store in reports DB table
         insert_report(
             session_id=session_id,
             report=feedback_dict,
@@ -454,7 +547,7 @@ def process_interview_turn(session_id: str, message_text: str) -> UnifiedIntervi
         )
 
         return UnifiedInterviewResponse(
-            reply="Interview completed. Thank you for discussing your technical background and curriculum progress!",
+            reply="Interview completed. Thank you for walking through your technical background and curriculum progress!",
             done=True,
             feedback=feedback_obj,
             sessionId=session_id,
@@ -462,40 +555,48 @@ def process_interview_turn(session_id: str, message_text: str) -> UnifiedIntervi
             candidate_id=session.get("candidate_id"),
             status="completed",
         )
-    else:
-        # Next Turn -> Generate Adaptive Question
-        next_question = generate_personalized_question(candidate, curriculum, requirements, turn_index=turn_count, conversation=conversation)
 
-        session["conversation"] = conversation
-        session["status"] = "active"
-        session["done"] = False
-        session["turn_count"] = turn_count
-        session["current_question"] = next_question
+    # Next Turn Question/Clarification Logic driven by Answer Quality
+    next_question = generate_personalized_question(
+        candidate=candidate,
+        curriculum=curriculum,
+        requirements=requirements,
+        turn_index=meaningful_count,
+        conversation=conversation,
+        latest_quality=quality,
+        latest_answer=message_text,
+    )
 
-        sessions[session_id] = session
-        persist_sessions_to_disk()
-        update_session(session_id, session)
+    session["conversation"] = conversation
+    session["status"] = "active"
+    session["done"] = False
+    session["turn_count"] = total_attempts
+    session["current_question"] = next_question
 
-        insert_turn(
-            session_id=session_id,
-            question=current_question,
-            answer=message_text,
-            transcript_turn=f"Q{turn_count}",
-            answered_at=datetime.now(timezone.utc).isoformat(),
-        )
+    sessions[session_id] = session
+    persist_sessions_to_disk()
+    update_session(session_id, session)
 
-        return UnifiedInterviewResponse(
-            reply=next_question,
-            done=False,
-            sessionId=session_id,
-            session_id=session_id,
-            candidate_id=session.get("candidate_id"),
-            status="active",
-        )
+    insert_turn(
+        session_id=session_id,
+        question=current_question,
+        answer=message_text,
+        transcript_turn=f"Q{total_attempts}",
+        answered_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+    return UnifiedInterviewResponse(
+        reply=next_question,
+        done=False,
+        sessionId=session_id,
+        session_id=session_id,
+        candidate_id=session.get("candidate_id"),
+        status="active",
+    )
 
 
 # ============================================================================
-# PERSONALIZED & ADAPTIVE LLM / FALLBACK LOGIC
+# PERSONALIZED & INTELLIGENT QUESTION GENERATION
 # ============================================================================
 
 def generate_personalized_question(
@@ -504,8 +605,31 @@ def generate_personalized_question(
     requirements: dict[str, Any],
     turn_index: int,
     conversation: list[dict[str, Any]],
+    latest_quality: Optional[str] = None,
+    latest_answer: Optional[str] = None,
 ) -> str:
-    # 1. Try Gemini LLM if client is initialized
+    # 1. Handle Invalid/Punctuation-only, Uncertainty, and Short Answers (STRICT NO-FALSE-PRAISE RULE)
+    if latest_quality == ANSWER_QUALITY_PUNCTUATION:
+        return (
+            "It looks like your response may not have come through clearly. "
+            "Could you please share your technical approach to the question?"
+        )
+
+    if latest_quality == ANSWER_QUALITY_UNCERTAINTY:
+        role = candidate.get("role", "software engineer")
+        return (
+            f"That's completely fine! Let's approach it from a simpler angle: for a {role}, "
+            "what initial steps or core principles would you consider when starting to address this problem?"
+        )
+
+    if latest_quality == ANSWER_QUALITY_VERY_SHORT and latest_answer:
+        short_text = latest_answer.strip()
+        return (
+            f"What makes '{short_text}' a suitable choice for this problem? "
+            "Could you explain one key advantage and one trade-off of that choice?"
+        )
+
+    # 2. Try Gemini LLM if client is available
     if gemini_client is not None:
         try:
             model_name = os.getenv("OPENAI_MODEL") or "gemini-2.0-flash"
@@ -514,19 +638,16 @@ def generate_personalized_question(
             )
 
             prompt = (
-                f"You are a technical interviewer for a candidate in the 31-Day AI Engineering Bootcamp.\n"
-                f"Candidate Name: {candidate.get('name')}\n"
-                f"Role: {candidate.get('role')}\n"
-                f"Experience: {candidate.get('experience')} years\n"
-                f"Skills: {', '.join(candidate.get('skills', []))}\n"
-                f"Growth Areas: {', '.join(candidate.get('growth_areas', []))}\n"
-                f"Bootcamp Missions: {json.dumps(candidate.get('missions', []))}\n"
-                f"Turn Index: {turn_index+1} of {MAX_INTERVIEW_TURNS}\n"
-                f"Previous turns:\n{history_text}\n\n"
-                f"Generate turn #{turn_index+1} technical question for this interview. "
-                f"If turn 1: ask a foundational question based on their primary skills and completed bootcamp missions.\n"
-                f"If turn 2: probe one of their failed missions or specific growth areas ({candidate.get('growth_areas')}).\n"
-                f"If turn 3: ask a system design or architectural trade-off scenario.\n"
+                f"You are a technical interviewer evaluating candidate {candidate.get('name')} ({candidate.get('role')}).\n"
+                f"Candidate skills: {candidate.get('skills')}\n"
+                f"Growth areas: {candidate.get('growth_areas')}\n"
+                f"Latest Answer: '{latest_answer}' (Quality Classification: {latest_quality})\n"
+                f"Previous Turns:\n{history_text}\n\n"
+                f"STRICT INSTRUCTIONS:\n"
+                f"- Evaluate the latest candidate answer before responding.\n"
+                f"- NEVER output positive praise phrases like 'Excellent insights' or 'Great explanation' unless the answer contains meaningful technical substance.\n"
+                f"- Reference specific technical concepts from their latest answer if meaningful.\n"
+                f"- Generate turn #{turn_index+1} question focusing on deep technical details, trade-offs, or system design.\n"
                 f"Return ONLY the plain text question for the candidate."
             )
 
@@ -539,11 +660,11 @@ def generate_personalized_question(
         except Exception as err:
             print(f"Gemini LLM call failed, fallback used: {err}")
 
-    # 2. Deterministic Adaptive Fallback Mode
-    return build_deterministic_question(candidate, curriculum, turn_index)
+    # 3. Deterministic Adaptive Fallback Mode
+    return build_deterministic_question(candidate, curriculum, turn_index, latest_answer)
 
 
-def build_deterministic_question(candidate: dict[str, Any], curriculum: dict[str, Any], turn_index: int) -> str:
+def build_deterministic_question(candidate: dict[str, Any], curriculum: dict[str, Any], turn_index: int, latest_answer: Optional[str] = None) -> str:
     name = candidate.get("name", "Candidate")
     role = candidate.get("role", "Software Engineer")
     skills = candidate.get("skills", ["Python", "APIs"])
@@ -552,6 +673,25 @@ def build_deterministic_question(candidate: dict[str, Any], curriculum: dict[str
 
     failed_missions = [m.get("title") for m in missions if not m.get("passed") and not m.get("skipped")]
     passed_missions = [m.get("title") for m in missions if m.get("passed")]
+
+    # If latest answer mentioned specific concepts, build an answer-aware follow-up!
+    if latest_answer and len(latest_answer.strip()) > 10:
+        ans_lower = latest_answer.lower()
+        if "postgres" in ans_lower or "sql" in ans_lower or "index" in ans_lower or "database" in ans_lower:
+            return (
+                "You highlighted database indexing and structural design concerns. "
+                "How do you determine which specific columns to index, and what write-performance trade-offs do excessive indexes introduce?"
+            )
+        elif "redis" in ans_lower or "cache" in ans_lower or "caching" in ans_lower:
+            return (
+                "You mentioned caching for performance optimization. "
+                "How do you manage cache invalidation and TTL policies when multiple service instances process real-time updates?"
+            )
+        elif "fastapi" in ans_lower or "pydantic" in ans_lower or "async" in ans_lower or "api" in ans_lower:
+            return (
+                "Your approach covers clean API endpoints and validation. "
+                "How do you handle background tasks, async rate limiting, and graceful degradation during traffic spikes?"
+            )
 
     if turn_index == 0:
         top_skill = skills[0] if skills else "software architecture"
@@ -580,14 +720,14 @@ def build_deterministic_question(candidate: dict[str, Any], curriculum: dict[str
         target_failed = failed_missions[0] if failed_missions else "complex data structures"
 
         return (
-            f"Thank you for that explanation. Now focusing on your learning journey: one of your listed growth areas is '{target_growth}' "
+            f"Thank you for walking through that. Moving to your learning journey: one of your growth areas is '{target_growth}' "
             f"(and in the bootcamp, you revisited '{target_failed}'). "
-            f"How would you approach solving bottlenecks, database query optimizations, or trade-offs when tackling '{target_growth}' in a production environment?"
+            f"How would you approach solving bottlenecks and query trade-offs when scaling '{target_growth}' in a production environment?"
         )
 
     else: # Turn 2
         return (
-            f"Excellent insights. For our final technical topic, let's explore system design and AI integration: "
+            f"For our final technical topic, let's explore system design and AI integration: "
             f"If you were tasked with incorporating Vector Search or an LLM RAG pipeline into your application architecture, "
             f"how would you ensure low latency, fault tolerance, and proper evaluation of the output?"
         )
@@ -598,7 +738,6 @@ def generate_personalized_feedback(
     curriculum: dict[str, Any],
     conversation: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    # 1. Try Gemini LLM if client is available
     if gemini_client is not None:
         try:
             model_name = os.getenv("OPENAI_MODEL") or "gemini-2.0-flash"
@@ -635,7 +774,6 @@ def generate_personalized_feedback(
         except Exception as err:
             print(f"Gemini LLM feedback generation failed, fallback used: {err}")
 
-    # 2. Deterministic Adaptive Fallback Feedback
     return build_fallback_feedback(candidate, conversation)
 
 

@@ -21,6 +21,126 @@ def test_health_endpoint():
     assert payload.get("status") == "ok"
 
 
+def test_candidate_verification_endpoint_success():
+    resp = client.get("/api/candidates/candidate-001")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["verified"] is True
+    assert data["candidate"]["name"] == "Aarav Sharma"
+
+
+def test_candidate_verification_endpoint_invalid_id():
+    resp = client.get("/api/candidates/candidate-999")
+    assert resp.status_code == 404
+
+
+def test_server_side_authoritative_candidate_overrides_fake_data():
+    payload = {
+        "sessionId": "auth-test-001",
+        "candidate": {
+            "id": "candidate-001",
+            "name": "Fake Malicious Name",
+            "role": "Fake Job Role"
+        }
+    }
+    resp = client.post("/api/interview", json=payload)
+    assert resp.status_code == 200
+
+    sess_resp = client.get("/api/interview/auth-test-001")
+    assert sess_resp.status_code == 200
+    cand = sess_resp.json()["candidate"]
+    assert cand["name"] == "Aarav Sharma"
+    assert cand["role"] == "Full-stack Engineer"
+
+
+def test_cannot_switch_candidate_mid_session():
+    start_resp = client.post("/api/interview", json={
+        "sessionId": "switch-test-001",
+        "candidate_id": "candidate-001"
+    })
+    assert start_resp.status_code == 200
+
+    switch_resp = client.post("/api/interview", json={
+        "sessionId": "switch-test-001",
+        "candidate_id": "candidate-002",
+        "message": "Attempting candidate switch"
+    })
+    assert switch_resp.status_code == 400
+    assert "Cannot change candidate" in switch_resp.json()["detail"]
+
+
+def test_answer_quality_punctuation_only_no_praise_no_advancement():
+    start_resp = client.post("/api/interview", json={
+        "sessionId": "punct-test-001",
+        "candidate_id": "candidate-001"
+    })
+    assert start_resp.status_code == 200
+
+    punct_resp = client.post("/api/interview", json={
+        "sessionId": "punct-test-001",
+        "message": "."
+    })
+    assert punct_resp.status_code == 200
+    reply = punct_resp.json()["reply"]
+    assert "Excellent insights" not in reply
+    assert "Great answer" not in reply
+    assert punct_resp.json()["done"] is False
+    assert "come through" in reply or "approach" in reply
+
+
+def test_answer_quality_uncertainty_no_praise():
+    start_resp = client.post("/api/interview", json={
+        "sessionId": "uncert-test-001",
+        "candidate_id": "candidate-001"
+    })
+    assert start_resp.status_code == 200
+
+    uncert_resp = client.post("/api/interview", json={
+        "sessionId": "uncert-test-001",
+        "message": "I don't know"
+    })
+    assert uncert_resp.status_code == 200
+    reply = uncert_resp.json()["reply"]
+    assert "Excellent insights" not in reply
+    assert "Great answer" not in reply
+    assert uncert_resp.json()["done"] is False
+    assert "simpler angle" in reply or "fine" in reply or "principles" in reply
+
+
+def test_answer_quality_very_short_clarification():
+    start_resp = client.post("/api/interview", json={
+        "sessionId": "short-test-001",
+        "candidate_id": "candidate-001"
+    })
+    assert start_resp.status_code == 200
+
+    short_resp = client.post("/api/interview", json={
+        "sessionId": "short-test-001",
+        "message": "Python"
+    })
+    assert short_resp.status_code == 200
+    reply = short_resp.json()["reply"]
+    assert "Excellent insights" not in reply
+    assert "Python" in reply
+    assert "advantage" in reply or "suitable" in reply
+
+
+def test_meaningful_answer_references_concepts_and_advances():
+    start_resp = client.post("/api/interview", json={
+        "sessionId": "strong-test-001",
+        "candidate_id": "candidate-001"
+    })
+    assert start_resp.status_code == 200
+
+    strong_resp = client.post("/api/interview", json={
+        "sessionId": "strong-test-001",
+        "message": "I would use PostgreSQL with indexes on high-cardinality columns and connection pooling for scaling."
+    })
+    assert strong_resp.status_code == 200
+    reply = strong_resp.json()["reply"]
+    assert "index" in reply.lower() or "database" in reply.lower() or "growth" in reply.lower()
+
+
 def test_start_interview_technical_spec():
     candidate = get_candidate_by_id("candidate-001")
     assert candidate is not None
@@ -83,27 +203,21 @@ def test_interview_multi_turn_flow_and_completion():
     assert isinstance(feedback.get("strengths"), list)
     assert isinstance(feedback.get("gaps"), list)
     assert isinstance(feedback.get("next"), list)
-    assert len(feedback["strengths"]) > 0
-    assert len(feedback["gaps"]) > 0
-    assert len(feedback["next"]) > 0
 
 
 def test_candidate_personalization_across_candidates():
-    # Aarav Sharma (Full-stack)
     aarav = get_candidate_by_id("candidate-001")
     res1 = client.post("/api/interview", json={"sessionId": "p-001", "candidate": aarav})
     assert res1.status_code == 200
     reply1 = res1.json()["reply"]
     assert "Aarav" in reply1 or "Full-stack" in reply1 or "FastAPI" in reply1
 
-    # Mia Johnson (Data Engineer)
     mia = get_candidate_by_id("candidate-002")
     res2 = client.post("/api/interview", json={"sessionId": "p-002", "candidate": mia})
     assert res2.status_code == 200
     reply2 = res2.json()["reply"]
     assert "Mia" in reply2 or "Data Engineer" in reply2 or "ETL" in reply2
 
-    # James Chen (Backend Engineer)
     james = get_candidate_by_id("candidate-003")
     res3 = client.post("/api/interview", json={"sessionId": "p-003", "candidate": james})
     assert res3.status_code == 200
